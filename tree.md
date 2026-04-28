@@ -4,6 +4,7 @@
 D:\check_chrome
 |-- .archive
 |   |-- auto-export-default.plan.md
+|   |-- collector-launcher.plan.md
 |   |-- chrome-readme.plan.md
 |   |-- export-flag-simplify.plan.md
 |   |-- localstorage-risk-origin-check.plan.md
@@ -18,5 +19,6 @@ D:\check_chrome
 |-- .gitignore
 |-- README.md
 |-- chrome-settings-collector.ps1
+|-- chrome-settings-launcher.ps1
 |-- tree.md
 ```

@@ -57,10 +57,36 @@ powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collect
 powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collector.ps1 -IncludeRawFiles -Output D:\check_chrome\export-raw
 ```
 
+如果你不想先手動下載主腳本，也可以先準備啟動腳本 `chrome-settings-launcher.ps1`，讓它自動從 GitHub 下載 `chrome-settings-collector.ps1` 再執行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-launcher.ps1
+```
+
+啟動腳本預設接受這個 GitHub 頁面網址：
+
+```text
+https://github.com/yaochangyu/brower-setting-collection/blob/master/chrome-settings-collector.ps1
+```
+
+它會自動轉成 raw 下載網址後再下載執行，所以不需要手動改成 `raw.githubusercontent.com`。
+
+若要透傳參數給主腳本，也可以直接帶在啟動腳本後面：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-launcher.ps1 -Profiles Default
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-launcher.ps1 -Origin https://recruit.1111.com.tw -NoExport
+```
+
 ## 參數說明
 
 | 參數 | 說明 |
 | --- | --- |
+| `-ScriptUrl` | 只適用於 `chrome-settings-launcher.ps1`；指定 GitHub blob URL 或 raw URL，未指定時預設下載本 repo 的 `chrome-settings-collector.ps1` |
+| `-DownloadDirectory` | 只適用於 `chrome-settings-launcher.ps1`；指定下載暫存目錄，未指定時使用 `%TEMP%\chrome-settings-collector` |
 | `-UserDataPath` | 指定 Chrome `User Data` 目錄；未指定時，預設使用目前使用者的 `%LOCALAPPDATA%\Google\Chrome\User Data` |
 | `-Profiles` | 只收集指定的 Profile，可傳一個或多個名稱，例如 `Default`、`Profile 1` |
 | `-Origin` | 指定一個或多個完整 origin（例如 `https://example.com`），額外檢查該站台的 Local Storage / IndexedDB / Session Storage 證據 |
@@ -169,6 +195,7 @@ powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collect
 ```text
 D:\check_chrome
 |-- chrome-settings-collector.ps1
+|-- chrome-settings-launcher.ps1
 |-- README.md
 |-- export
 |   |-- summary.json

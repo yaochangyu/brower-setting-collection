@@ -63,6 +63,14 @@ powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collect
 powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-launcher.ps1
 ```
 
+若未指定 `-Output`，啟動腳本會預設把報告寫到 **`chrome-settings-launcher.ps1` 同目錄下的 `export` 資料夾**，例如：
+
+```text
+D:\check_chrome\export
+```
+
+也就是說，`chrome-settings-launcher.ps1` 下載主腳本時雖然會暫存在 `%TEMP%\chrome-settings-collector`，但**報告不會預設寫到 TEMP**，而是寫回 launcher 所在目錄。
+
 啟動腳本預設接受這個 GitHub 頁面網址：
 
 ```text
@@ -81,6 +89,12 @@ powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-launche
 powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-launcher.ps1 -Origin https://recruit.1111.com.tw -NoExport
 ```
 
+若你想自訂報告位置，仍然可以明確指定 `-Output`：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-launcher.ps1 -Output D:\check_chrome\custom-export
+```
+
 ## 參數說明
 
 | 參數 | 說明 |
@@ -91,7 +105,7 @@ powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-launche
 | `-Profiles` | 只收集指定的 Profile，可傳一個或多個名稱，例如 `Default`、`Profile 1` |
 | `-Origin` | 指定一個或多個完整 origin（例如 `https://example.com`），額外檢查該站台的 Local Storage / IndexedDB / Session Storage 證據 |
 | `-NoExport` | 不寫出 `summary.txt` / `summary.json`；只顯示主控台結果 |
-| `-Output` | 指定匯出目錄；未指定時，會在腳本同目錄建立時間戳記資料夾 |
+| `-Output` | 指定匯出目錄；對 `chrome-settings-launcher.ps1` 而言，未指定時會輸出到 launcher 同目錄下的 `export`；對 `chrome-settings-collector.ps1` 而言，未指定時會在腳本同目錄建立時間戳記資料夾 |
 | `-IncludeRawFiles` | 匯出 `Local State`、`Preferences`、`Secure Preferences` 等原始檔副本 |
 
 ## 報告分類

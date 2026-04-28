@@ -12,6 +12,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+$launcherRoot = if ($PSScriptRoot) { $PSScriptRoot } elseif ($PSCommandPath) { Split-Path -Parent $PSCommandPath } else { (Get-Location).Path }
 
 function Resolve-CollectorDownloadUrl {
     param(
@@ -71,6 +72,8 @@ if ($NoExport) {
 
 if ($PSBoundParameters.ContainsKey("Output")) {
     $collectorArgs["Output"] = $Output
+} elseif (-not $NoExport) {
+    $collectorArgs["Output"] = Join-Path $launcherRoot "export"
 }
 
 if ($IncludeRawFiles) {

@@ -3,6 +3,7 @@
 ```text
 D:\check_chrome
 |-- .archive
+|   |-- auto-export-default.plan.md
 |   |-- chrome-readme.plan.md
 |   |-- export-default-path.plan.md
 |   |-- git-version-control.plan.md
@@ -12,7 +13,7 @@ D:\check_chrome
 |   |-- chrome-extensions-audit.plan.md
 |   `-- chrome-settings-audit.plan.md
 |-- .gitignore
-|-- auto-export-default.plan.md
+|-- output-parameter-rename.plan.md
 |-- README.md
 |-- chrome-settings-collector.ps1
 |-- tree.md

@@ -25,7 +25,9 @@
 powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collector.ps1
 ```
 
-匯出摘要到腳本同目錄下的時間戳記資料夾：
+上面這個指令除了顯示主控台內容，也會**預設匯出**到腳本同目錄下的時間戳記資料夾。
+
+如果你想明確寫出同樣行為，也可以帶 `-Export`：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collector.ps1 -Export
@@ -55,7 +57,7 @@ powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collect
 | --- | --- |
 | `-UserDataPath` | 指定 Chrome `User Data` 目錄；未指定時，預設使用目前使用者的 `%LOCALAPPDATA%\Google\Chrome\User Data` |
 | `-Profiles` | 只收集指定的 Profile，可傳一個或多個名稱，例如 `Default`、`Profile 1` |
-| `-Export` | 將報告寫入輸出目錄 |
+| `-Export` | 將報告寫入輸出目錄；目前預設已開啟，主要用來明示匯出意圖 |
 | `-OutputDirectory` | 指定匯出目錄；未指定時，會在腳本同目錄建立時間戳記資料夾 |
 | `-IncludeRawFiles` | 匯出 `Local State`、`Preferences`、`Secure Preferences` 等原始檔副本 |
 

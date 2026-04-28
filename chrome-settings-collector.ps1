@@ -2,7 +2,7 @@
 param(
     [string]$UserDataPath = (Join-Path $env:LOCALAPPDATA "Google\Chrome\User Data"),
     [string[]]$Profiles,
-    [switch]$Export,
+    [switch]$Export = $true,
     [string]$OutputDirectory,
     [switch]$IncludeRawFiles
 )

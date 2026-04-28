@@ -39,6 +39,12 @@ powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collect
 powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collector.ps1 -Profiles Default
 ```
 
+檢查指定網站 origin 的站台資料證據：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collector.ps1 -Origin https://recruit.1111.com.tw
+```
+
 匯出摘要到指定目錄：
 
 ```powershell
@@ -57,6 +63,7 @@ powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collect
 | --- | --- |
 | `-UserDataPath` | 指定 Chrome `User Data` 目錄；未指定時，預設使用目前使用者的 `%LOCALAPPDATA%\Google\Chrome\User Data` |
 | `-Profiles` | 只收集指定的 Profile，可傳一個或多個名稱，例如 `Default`、`Profile 1` |
+| `-Origin` | 指定一個或多個完整 origin（例如 `https://example.com`），額外檢查該站台的 Local Storage / IndexedDB / Session Storage 證據 |
 | `-Export` | 將報告寫入輸出目錄；目前預設已開啟，主要用來明示匯出意圖 |
 | `-Output` | 指定匯出目錄；未指定時，會在腳本同目錄建立時間戳記資料夾 |
 | `-IncludeRawFiles` | 匯出 `Local State`、`Preferences`、`Secure Preferences` 等原始檔副本 |
@@ -76,6 +83,8 @@ powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collect
 
 - `Profile Metadata`
 - `Collection Notes`
+- `Local Storage Risk Assessment`
+- `Origin Site Data Checks`
 
 ## 目前會收集的內容
 
@@ -114,6 +123,19 @@ powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collect
 - `clearBrowsingDataSelection`
 - 站點資料例外設定數量
 
+### `Local Storage Risk Assessment`
+
+- 依 policy、清除瀏覽資料選項、third-party cookie 設定、Profile 關閉狀態做 heuristic 判讀
+- 輸出整體與各 Profile 的 `high` / `medium` / `low` 風險摘要
+- 列出判讀依據與原始 signals
+
+### `Origin Site Data Checks`
+
+- 只有在指定 `-Origin` 時才會收集
+- 檢查指定 origin 的 content setting 例外是否命中
+- 檢查 Local Storage / IndexedDB / Session Storage 是否有可辨識的站台證據
+- 輸出各 Profile 的 `riskImpact` 與備註
+
 ### `chrome://system`
 
 - 目前**未收集**
@@ -139,6 +161,7 @@ powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collect
 4. Chrome 開啟中仍可讀取，但若某些設定尚未寫回磁碟，結果可能不是最新。
 5. 不同 Chrome 版本的欄位可能不同，腳本會盡量容錯，但不能保證所有版本完全一致。
 6. 若 Chrome 正在大量寫入設定檔，仍可能遇到暫時性的 JSON 讀取失敗；可先關閉 Chrome 後再重試。
+7. `-Origin` 的 Local Storage / Session Storage 檢查目前使用 heuristic token scan；抓到證據時可作為線索，沒抓到時不代表該 origin 一定不存在。
 
 ## 範例輸出目錄
 

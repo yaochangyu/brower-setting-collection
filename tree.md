@@ -5,6 +5,7 @@ D:\check_chrome
 |-- .archive
 |   |-- auto-export-default.plan.md
 |   |-- chrome-readme.plan.md
+|   |-- localstorage-risk-origin-check.plan.md
 |   |-- output-parameter-rename.plan.md
 |   |-- export-default-path.plan.md
 |   |-- git-version-control.plan.md

@@ -2,6 +2,7 @@
 param(
     [string]$UserDataPath = (Join-Path $env:LOCALAPPDATA "Google\Chrome\User Data"),
     [string[]]$Profiles,
+    [string[]]$Origin,
     [switch]$Export = $true,
     [string]$Output,
     [switch]$IncludeRawFiles
@@ -240,6 +241,421 @@ function Resolve-CookieControlsMode {
     }
 }
 
+function Get-RiskLevelRank {
+    param(
+        [AllowNull()]
+        [string]$Level
+    )
+
+    switch ($Level) {
+        "high" { return 3 }
+        "medium" { return 2 }
+        default { return 1 }
+    }
+}
+
+function Get-HigherRiskLevel {
+    param(
+        [AllowNull()]
+        [string]$CurrentLevel,
+
+        [AllowNull()]
+        [string]$CandidateLevel
+    )
+
+    if ((Get-RiskLevelRank -Level $CandidateLevel) -gt (Get-RiskLevelRank -Level $CurrentLevel)) {
+        return $CandidateLevel
+    }
+
+    return $(if ([string]::IsNullOrWhiteSpace($CurrentLevel)) { "low" } else { $CurrentLevel })
+}
+
+function Get-LocalStorageRiskAssessment {
+    param(
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$Profile,
+
+        [int]$EnterprisePolicyKeyCount = 0
+    )
+
+    $riskLevel = "low"
+    $findings = New-Object System.Collections.Generic.List[string]
+
+    if ($EnterprisePolicyKeyCount -gt 0) {
+        $riskLevel = Get-HigherRiskLevel -CurrentLevel $riskLevel -CandidateLevel "high"
+        $findings.Add("Enterprise policy keys were detected at the global Chrome level ($EnterprisePolicyKeyCount).")
+    }
+
+    if ($Profile.clearBrowsingDataSelection.cookies -eq $true) {
+        $riskLevel = Get-HigherRiskLevel -CurrentLevel $riskLevel -CandidateLevel "medium"
+        $findings.Add("Clear browsing data last had cookies/site data selected.")
+    }
+
+    if ($Profile.clearBrowsingDataSelection.siteSettings -eq $true) {
+        $riskLevel = Get-HigherRiskLevel -CurrentLevel $riskLevel -CandidateLevel "medium"
+        $findings.Add("Clear browsing data last had site settings selected.")
+    }
+
+    if ($Profile.clearBrowsingDataSelection.hostedAppsData -eq $true) {
+        $riskLevel = Get-HigherRiskLevel -CurrentLevel $riskLevel -CandidateLevel "medium"
+        $findings.Add("Clear browsing data last had hosted app data selected.")
+    }
+
+    if ($Profile.cookieControlsModeRaw -eq 2) {
+        $riskLevel = Get-HigherRiskLevel -CurrentLevel $riskLevel -CandidateLevel "medium"
+        $findings.Add("cookie_controls_mode indicates blocking third-party cookies.")
+    }
+
+    if ($Profile.blockThirdPartyCookies -eq $true) {
+        $riskLevel = Get-HigherRiskLevel -CurrentLevel $riskLevel -CandidateLevel "medium"
+        $findings.Add("block_third_party_cookies is enabled.")
+    }
+
+    if ($Profile.exitType -and $Profile.exitType -ne "Normal") {
+        $riskLevel = Get-HigherRiskLevel -CurrentLevel $riskLevel -CandidateLevel "medium"
+        $findings.Add("Profile exit_type was '$($Profile.exitType)'.")
+    }
+
+    if ($Profile.exitedCleanly -eq $false) {
+        $riskLevel = Get-HigherRiskLevel -CurrentLevel $riskLevel -CandidateLevel "medium"
+        $findings.Add("Profile reports exited_cleanly=false.")
+    }
+
+    if ($findings.Count -eq 0) {
+        $findings.Add("No clear automatic localStorage cleanup signal was found in collected settings.")
+    }
+
+    $summary = switch ($riskLevel) {
+        "high" { "High risk signals were found. Investigate policy and per-site storage evidence first." }
+        "medium" { "Some settings may affect site data retention or cross-site behavior, but they do not prove automatic localStorage deletion." }
+        default { "No strong signal suggests automatic localStorage deletion in collected settings." }
+    }
+
+    return [pscustomobject][ordered]@{
+        riskLevel = $riskLevel
+        summary = $summary
+        findings = @($findings)
+        signals = [pscustomobject][ordered]@{
+            enterprisePolicyKeyCount = $EnterprisePolicyKeyCount
+            clearBrowsingDataCookiesSelected = $Profile.clearBrowsingDataSelection.cookies
+            clearBrowsingDataSiteSettingsSelected = $Profile.clearBrowsingDataSelection.siteSettings
+            clearBrowsingDataHostedAppsDataSelected = $Profile.clearBrowsingDataSelection.hostedAppsData
+            cookieControlsModeRaw = $Profile.cookieControlsModeRaw
+            blockThirdPartyCookies = $Profile.blockThirdPartyCookies
+            exitType = $Profile.exitType
+            exitedCleanly = $Profile.exitedCleanly
+        }
+    }
+}
+
+function ConvertTo-OriginTarget {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Origin
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Origin)) {
+        throw "Origin cannot be empty."
+    }
+
+    $uri = $null
+    if (-not [System.Uri]::TryCreate($Origin, [System.UriKind]::Absolute, [ref]$uri)) {
+        throw "Origin must be an absolute URI, for example: https://example.com"
+    }
+
+    if ($uri.Scheme -notin @("http", "https")) {
+        throw "Origin scheme must be http or https: $Origin"
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($uri.AbsolutePath) -and $uri.AbsolutePath -ne "/") {
+        throw "Origin must not include a path: $Origin"
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($uri.Query) -or -not [string]::IsNullOrWhiteSpace($uri.Fragment)) {
+        throw "Origin must not include query string or fragment: $Origin"
+    }
+
+    $normalizedOrigin = $uri.GetComponents([System.UriComponents]::SchemeAndServer, [System.UriFormat]::UriEscaped).ToLowerInvariant()
+    $portToken = if ($uri.IsDefaultPort) { "0" } else { [string]$uri.Port }
+
+    return [pscustomobject][ordered]@{
+        origin = $normalizedOrigin
+        scheme = $uri.Scheme.ToLowerInvariant()
+        host = $uri.Host.ToLowerInvariant()
+        port = if ($uri.IsDefaultPort) { $null } else { $uri.Port }
+        authority = $uri.Authority.ToLowerInvariant()
+        indexedDbPrefix = ("{0}_{1}_{2}" -f $uri.Scheme.ToLowerInvariant(), $uri.Host.ToLowerInvariant(), $portToken)
+        searchTokens = @(
+            $normalizedOrigin
+            $uri.Host.ToLowerInvariant()
+            $uri.Authority.ToLowerInvariant()
+        ) | Sort-Object -Unique
+    }
+}
+
+function Find-MatchingExceptionKeys {
+    param(
+        [AllowNull()]
+        [object]$Exceptions,
+
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$Target
+    )
+
+    if ($null -eq $Exceptions) {
+        return @()
+    }
+
+    $matches = New-Object System.Collections.Generic.List[string]
+    foreach ($property in $Exceptions.PSObject.Properties) {
+        $name = [string]$property.Name
+        $lowerName = $name.ToLowerInvariant()
+        if ($lowerName.Contains($Target.origin) -or $lowerName.Contains($Target.host) -or $lowerName.Contains($Target.authority)) {
+            $matches.Add($name)
+        }
+    }
+
+    return @($matches | Sort-Object -Unique)
+}
+
+function Get-OriginExceptionMatches {
+    param(
+        [AllowNull()]
+        [object]$Preferences,
+
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$Target
+    )
+
+    $exceptionRoot = Get-NestedValue -Object $Preferences -Path @("profile", "content_settings", "exceptions")
+    $categories = @(
+        "cookies",
+        "cookie_controls_metadata",
+        "durable_storage",
+        "legacy_cookie_access",
+        "legacy_cookie_scope"
+    )
+
+    $matches = foreach ($category in $categories) {
+        $categoryExceptions = Get-ObjectProperty -Object $exceptionRoot -Name $category
+        $keys = @(Find-MatchingExceptionKeys -Exceptions $categoryExceptions -Target $Target)
+        if ($keys.Count -gt 0) {
+            [pscustomobject][ordered]@{
+                category = $category
+                keys = $keys
+            }
+        }
+    }
+
+    return @($matches)
+}
+
+function Test-FileContainsToken {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$Tokens
+    )
+
+    $fileInfo = Get-Item -LiteralPath $Path -ErrorAction Stop
+    if ($fileInfo.Length -gt 16MB) {
+        return $false
+    }
+
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($Path)
+    } catch [System.IO.IOException] {
+        return $false
+    } catch [System.UnauthorizedAccessException] {
+        return $false
+    }
+
+    $asciiText = [System.Text.Encoding]::ASCII.GetString($bytes)
+    foreach ($token in $Tokens) {
+        if (-not [string]::IsNullOrWhiteSpace($token) -and $asciiText.IndexOf($token, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Get-LevelDbOriginEvidence {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$StoragePath,
+
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$Target
+    )
+
+    if (-not (Test-Path -LiteralPath $StoragePath -PathType Container)) {
+        return [pscustomobject][ordered]@{
+            storagePath = $StoragePath
+            exists = $false
+            scanMethod = "ascii-token-scan"
+            scannedFileCount = 0
+            matchedFiles = @()
+        }
+    }
+
+    $candidateFiles = @(
+        Get-ChildItem -LiteralPath $StoragePath -File -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -in @(".ldb", ".log") -or $_.Name -in @("LOG", "CURRENT") } |
+            Select-Object -First 60
+    )
+
+    $matchedFiles = New-Object System.Collections.Generic.List[string]
+    foreach ($file in $candidateFiles) {
+        if (Test-FileContainsToken -Path $file.FullName -Tokens $Target.searchTokens) {
+            $matchedFiles.Add($file.FullName)
+        }
+    }
+
+    return [pscustomobject][ordered]@{
+        storagePath = $StoragePath
+        exists = $true
+        scanMethod = "ascii-token-scan"
+        scannedFileCount = $candidateFiles.Count
+        matchedFiles = @($matchedFiles | Sort-Object -Unique)
+    }
+}
+
+function Get-IndexedDbOriginEvidence {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$IndexedDbPath,
+
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$Target
+    )
+
+    if (-not (Test-Path -LiteralPath $IndexedDbPath -PathType Container)) {
+        return [pscustomobject][ordered]@{
+            storagePath = $IndexedDbPath
+            exists = $false
+            scanMethod = "directory-name-match"
+            matchedPaths = @()
+        }
+    }
+
+    $matchedPaths = @(
+        Get-ChildItem -LiteralPath $IndexedDbPath -Directory -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.Name.ToLowerInvariant().Contains($Target.indexedDbPrefix) -or
+                $_.Name.ToLowerInvariant().Contains($Target.host)
+            } |
+            Select-Object -ExpandProperty FullName
+    )
+
+    return [pscustomobject][ordered]@{
+        storagePath = $IndexedDbPath
+        exists = $true
+        scanMethod = "directory-name-match"
+        matchedPaths = @($matchedPaths | Sort-Object -Unique)
+    }
+}
+
+function Get-OriginRiskImpact {
+    param(
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$BaseRiskAssessment,
+
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [object[]]$MatchedExceptions,
+
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$LocalStorageEvidence,
+
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$IndexedDbEvidence,
+
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$SessionStorageEvidence
+    )
+
+    $hasDirectEvidence =
+        @($LocalStorageEvidence.matchedFiles).Count -gt 0 -or
+        @($IndexedDbEvidence.matchedPaths).Count -gt 0 -or
+        @($SessionStorageEvidence.matchedFiles).Count -gt 0
+
+    $hasExceptionMatches = @($MatchedExceptions).Count -gt 0
+    $riskLevel = $BaseRiskAssessment.riskLevel
+
+    if ((-not $hasDirectEvidence) -and (-not $hasExceptionMatches) -and $BaseRiskAssessment.riskLevel -eq "low") {
+        $riskLevel = "medium"
+    }
+
+    $summary = if ($hasDirectEvidence) {
+        "Direct storage evidence was found for the requested origin."
+    } elseif ($hasExceptionMatches) {
+        "No direct storage evidence was found, but matching site setting exceptions exist for the requested origin."
+    } else {
+        "No direct origin-specific storage evidence was found with the current heuristic scan."
+    }
+
+    return [pscustomobject][ordered]@{
+        riskLevel = $riskLevel
+        summary = $summary
+        hasDirectEvidence = $hasDirectEvidence
+        hasExceptionMatches = $hasExceptionMatches
+    }
+}
+
+function Get-OriginCheckSummary {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProfileRoot,
+
+        [AllowNull()]
+        [object]$Preferences,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$Origins,
+
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$BaseRiskAssessment
+    )
+
+    $checks = foreach ($origin in $Origins) {
+        $target = ConvertTo-OriginTarget -Origin $origin
+        $matchedExceptions = @(Get-OriginExceptionMatches -Preferences $Preferences -Target $target)
+        $localStorageEvidence = Get-LevelDbOriginEvidence -StoragePath (Join-Path $ProfileRoot "Local Storage\leveldb") -Target $target
+        $indexedDbEvidence = Get-IndexedDbOriginEvidence -IndexedDbPath (Join-Path $ProfileRoot "IndexedDB") -Target $target
+        $sessionStorageEvidence = Get-LevelDbOriginEvidence -StoragePath (Join-Path $ProfileRoot "Session Storage") -Target $target
+        $riskImpact = Get-OriginRiskImpact -BaseRiskAssessment $BaseRiskAssessment -MatchedExceptions $matchedExceptions -LocalStorageEvidence $localStorageEvidence -IndexedDbEvidence $indexedDbEvidence -SessionStorageEvidence $sessionStorageEvidence
+
+        $notes = New-Object System.Collections.Generic.List[string]
+        if (@($matchedExceptions).Count -gt 0) {
+            $notes.Add("Matching content setting exceptions were found for this origin.")
+        }
+
+        if (@($indexedDbEvidence.matchedPaths).Count -gt 0) {
+            $notes.Add("IndexedDB directories matched this origin by directory name.")
+        }
+
+        if ((@($localStorageEvidence.matchedFiles).Count -eq 0) -and (@($sessionStorageEvidence.matchedFiles).Count -eq 0)) {
+            $notes.Add("Local Storage and Session Storage use LevelDB, so origin evidence is heuristic and may not prove absence.")
+        }
+
+        [pscustomobject][ordered]@{
+            origin = $target.origin
+            profileDirectory = (Split-Path -Leaf $ProfileRoot)
+            matchedExceptions = @($matchedExceptions)
+            localStorageEvidence = $localStorageEvidence
+            indexedDbEvidence = $indexedDbEvidence
+            sessionStorageEvidence = $sessionStorageEvidence
+            riskImpact = $riskImpact
+            notes = @($notes)
+        }
+    }
+
+    return @($checks)
+}
+
 function Resolve-ExtensionState {
     param(
         [AllowNull()]
@@ -469,7 +885,9 @@ function Get-ProfileSummary {
         [string]$ProfileDirectory,
 
         [AllowNull()]
-        [object]$LocalState
+        [object]$LocalState,
+
+        [string[]]$Origins
     )
 
     $preferencesPath = Get-RequiredFilePath -Path (Join-Path (Join-Path $RootPath $ProfileDirectory) "Preferences")
@@ -520,6 +938,7 @@ function Get-ProfileSummary {
         }
         extensionCount = @($extensionData.items).Count
         extensions = @($extensionData.items)
+        originChecks = @()
         notes = @()
     }
 
@@ -545,6 +964,11 @@ function Get-ProfileSummary {
     }
 
     $summary.notes = @($notes)
+    $baseRiskAssessment = Get-LocalStorageRiskAssessment -Profile ([pscustomobject]$summary)
+    if ($Origins -and @($Origins).Count -gt 0) {
+        $summary.originChecks = @(Get-OriginCheckSummary -ProfileRoot $profileRoot -Preferences $preferences -Origins $Origins -BaseRiskAssessment $baseRiskAssessment)
+    }
+
     return [pscustomobject]$summary
 }
 
@@ -680,8 +1104,12 @@ function Add-TextSection {
 function New-ProfileSectionMap {
     param(
         [Parameter(Mandatory = $true)]
-        [pscustomobject]$Profile
+        [pscustomobject]$Profile,
+
+        [int]$EnterprisePolicyKeyCount = 0
     )
+
+    $localStorageRiskAssessment = Get-LocalStorageRiskAssessment -Profile $Profile -EnterprisePolicyKeyCount $EnterprisePolicyKeyCount
 
     return [pscustomobject][ordered]@{
         profileDirectory = $Profile.profileDirectory
@@ -695,6 +1123,18 @@ function New-ProfileSectionMap {
             "chrome://policy" = [pscustomobject][ordered]@{
                 collectionStatus = "global-only"
                 summary = "Policy data is collected at the global Chrome level, not per-profile."
+            }
+            "Local Storage Risk Assessment" = $localStorageRiskAssessment
+            "Origin Site Data Checks" = if (@($Profile.originChecks).Count -gt 0) {
+                [pscustomobject][ordered]@{
+                    collectionStatus = "requested"
+                    checks = $Profile.originChecks
+                }
+            } else {
+                [pscustomobject][ordered]@{
+                    collectionStatus = "not-requested"
+                    summary = "Use -Origin <scheme://host[:port]> to inspect site-specific storage evidence."
+                }
             }
             "chrome://extensions" = [pscustomobject][ordered]@{
                 collectionStatus = "collected"
@@ -753,10 +1193,37 @@ function Build-ReportSummary {
         [object[]]$ProfilesSummary,
 
         [AllowNull()]
-        [object]$EnterprisePolicy
+        [object]$EnterprisePolicy,
+
+        [string[]]$Origins
     )
 
-    $reportProfiles = @($ProfilesSummary | ForEach-Object { New-ProfileSectionMap -Profile $_ })
+    $enterprisePolicyKeyCount = Get-PropertyCount -Object $EnterprisePolicy
+    $profileRiskAssessments = @(
+        $ProfilesSummary | ForEach-Object {
+            $assessment = Get-LocalStorageRiskAssessment -Profile $_ -EnterprisePolicyKeyCount $enterprisePolicyKeyCount
+            [pscustomobject][ordered]@{
+                profileDirectory = $_.profileDirectory
+                riskLevel = $assessment.riskLevel
+                summary = $assessment.summary
+                findings = $assessment.findings
+                signals = $assessment.signals
+            }
+        }
+    )
+
+    $overallRiskLevel = "low"
+    foreach ($assessment in $profileRiskAssessments) {
+        $overallRiskLevel = Get-HigherRiskLevel -CurrentLevel $overallRiskLevel -CandidateLevel $assessment.riskLevel
+    }
+
+    $overallRiskSummary = switch ($overallRiskLevel) {
+        "high" { "High risk signals were detected. Check enterprise policy and site-specific storage evidence." }
+        "medium" { "Some settings may affect site data behavior, but none alone proves automatic localStorage deletion." }
+        default { "Collected settings do not show a strong signal for automatic localStorage deletion." }
+    }
+
+    $reportProfiles = @($ProfilesSummary | ForEach-Object { New-ProfileSectionMap -Profile $_ -EnterprisePolicyKeyCount $enterprisePolicyKeyCount })
 
     return [pscustomobject][ordered]@{
         generatedAt = (Get-Date).ToString("o")
@@ -771,7 +1238,7 @@ function Build-ReportSummary {
             }
             "chrome://policy" = [pscustomobject][ordered]@{
                 collectionStatus = "partial"
-                enterprisePolicyKeyCount = (Get-PropertyCount -Object $EnterprisePolicy)
+                enterprisePolicyKeyCount = $enterprisePolicyKeyCount
                 enterprisePolicyKeys = @(
                     if ($null -ne $EnterprisePolicy) {
                         $EnterprisePolicy.PSObject.Properties.Name | Sort-Object
@@ -806,6 +1273,31 @@ function Build-ReportSummary {
                 collectionStatus = "partial"
                 summary = "This report only collects site data related settings and exception counts, not the full per-site storage inventory."
             }
+            "Local Storage Risk Assessment" = [pscustomobject][ordered]@{
+                collectionStatus = "heuristic"
+                overallRiskLevel = $overallRiskLevel
+                summary = $overallRiskSummary
+                profileAssessments = $profileRiskAssessments
+            }
+            "Origin Site Data Checks" = if ($Origins -and @($Origins).Count -gt 0) {
+                [pscustomobject][ordered]@{
+                    collectionStatus = "requested"
+                    requestedOrigins = @($Origins | ForEach-Object { (ConvertTo-OriginTarget -Origin $_).origin })
+                    profileChecks = @(
+                        $ProfilesSummary | ForEach-Object {
+                            [pscustomobject][ordered]@{
+                                profileDirectory = $_.profileDirectory
+                                checks = $_.originChecks
+                            }
+                        }
+                    )
+                }
+            } else {
+                [pscustomobject][ordered]@{
+                    collectionStatus = "not-requested"
+                    summary = "Use -Origin <scheme://host[:port]> to add origin-specific storage checks."
+                }
+            }
             "chrome://system" = [pscustomobject][ordered]@{
                 collectionStatus = "not-collected"
                 summary = "This script does not currently collect chrome://system runtime diagnostics."
@@ -826,6 +1318,7 @@ function Build-ReportSummary {
                 "This script reads Local State and profile Preferences without modifying Chrome settings.",
                 "localStorage is site data; Chrome does not expose a single global localStorage on/off switch in Preferences.",
                 "browser.clear_data.* reflects the last clear-browsing-data dialog selection, not an automatic delete-on-exit proof.",
+                "Use -Origin with a full origin such as https://example.com to inspect site-specific storage evidence.",
                 "Extension inventory is inferred from Secure Preferences or Preferences plus the profile Extensions directory.",
                 "Use -Export to save summary files. Use -IncludeRawFiles only if you also want raw Local State and Preferences copies."
             )
@@ -886,11 +1379,11 @@ if (Test-Path -LiteralPath $lastVersionPath -PathType Leaf) {
 }
 
 $profilesSummary = foreach ($profileDirectory in $profileDirectories) {
-    Get-ProfileSummary -RootPath $UserDataPath -ProfileDirectory $profileDirectory -LocalState $localState
+    Get-ProfileSummary -RootPath $UserDataPath -ProfileDirectory $profileDirectory -LocalState $localState -Origins $Origin
 }
 
 $enterprisePolicy = Get-ObjectProperty -Object (Get-ObjectProperty -Object $localState -Name "policy") -Name "user_policies"
-$summary = Build-ReportSummary -UserDataPath $UserDataPath -LocalStatePath $localStatePath -ChromeVersion $chromeVersion -LastUsedProfile (Get-NestedValue -Object $localState -Path @("profile", "last_used")) -ProfilesSummary $profilesSummary -EnterprisePolicy $enterprisePolicy
+$summary = Build-ReportSummary -UserDataPath $UserDataPath -LocalStatePath $localStatePath -ChromeVersion $chromeVersion -LastUsedProfile (Get-NestedValue -Object $localState -Path @("profile", "last_used")) -ProfilesSummary $profilesSummary -EnterprisePolicy $enterprisePolicy -Origins $Origin
 
 $textReport = Format-TextReport -Summary $summary
 Write-Output $textReport

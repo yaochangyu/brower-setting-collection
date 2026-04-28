@@ -27,10 +27,10 @@ powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collect
 
 上面這個指令除了顯示主控台內容，也會**預設匯出**到腳本同目錄下的時間戳記資料夾。
 
-如果你想明確寫出同樣行為，也可以帶 `-Export`：
+如果你只想看主控台結果，不要寫出檔案，可以帶 `-NoExport`：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collector.ps1 -Export
+powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collector.ps1 -NoExport
 ```
 
 只看特定 Profile：
@@ -48,13 +48,13 @@ powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collect
 匯出摘要到指定目錄：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collector.ps1 -Export -Output D:\check_chrome\export
+powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collector.ps1 -Output D:\check_chrome\export
 ```
 
 匯出摘要與原始設定檔：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collector.ps1 -Export -IncludeRawFiles -Output D:\check_chrome\export-raw
+powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collector.ps1 -IncludeRawFiles -Output D:\check_chrome\export-raw
 ```
 
 ## 參數說明
@@ -64,7 +64,7 @@ powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collect
 | `-UserDataPath` | 指定 Chrome `User Data` 目錄；未指定時，預設使用目前使用者的 `%LOCALAPPDATA%\Google\Chrome\User Data` |
 | `-Profiles` | 只收集指定的 Profile，可傳一個或多個名稱，例如 `Default`、`Profile 1` |
 | `-Origin` | 指定一個或多個完整 origin（例如 `https://example.com`），額外檢查該站台的 Local Storage / IndexedDB / Session Storage 證據 |
-| `-Export` | 將報告寫入輸出目錄；目前預設已開啟，主要用來明示匯出意圖 |
+| `-NoExport` | 不寫出 `summary.txt` / `summary.json`；只顯示主控台結果 |
 | `-Output` | 指定匯出目錄；未指定時，會在腳本同目錄建立時間戳記資料夾 |
 | `-IncludeRawFiles` | 匯出 `Local State`、`Preferences`、`Secure Preferences` 等原始檔副本 |
 
@@ -142,7 +142,7 @@ powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collect
 
 ## 匯出內容
 
-使用 `-Export` 時，會產生：
+預設情況下會產生：
 
 - `summary.txt`：純文字報告
 - `summary.json`：結構化報告
@@ -162,6 +162,7 @@ powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collect
 5. 不同 Chrome 版本的欄位可能不同，腳本會盡量容錯，但不能保證所有版本完全一致。
 6. 若 Chrome 正在大量寫入設定檔，仍可能遇到暫時性的 JSON 讀取失敗；可先關閉 Chrome 後再重試。
 7. `-Origin` 的 Local Storage / Session Storage 檢查目前使用 heuristic token scan；抓到證據時可作為線索，沒抓到時不代表該 origin 一定不存在。
+8. `-IncludeRawFiles` 只有在有匯出檔案時才有作用；若同時指定 `-NoExport`，就不會產生 raw 副本。
 
 ## 範例輸出目錄
 

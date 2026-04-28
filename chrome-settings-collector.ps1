@@ -3,7 +3,7 @@ param(
     [string]$UserDataPath = (Join-Path $env:LOCALAPPDATA "Google\Chrome\User Data"),
     [string[]]$Profiles,
     [string[]]$Origin,
-    [switch]$Export = $true,
+    [switch]$NoExport,
     [string]$Output,
     [switch]$IncludeRawFiles
 )
@@ -1320,7 +1320,7 @@ function Build-ReportSummary {
                 "browser.clear_data.* reflects the last clear-browsing-data dialog selection, not an automatic delete-on-exit proof.",
                 "Use -Origin with a full origin such as https://example.com to inspect site-specific storage evidence.",
                 "Extension inventory is inferred from Secure Preferences or Preferences plus the profile Extensions directory.",
-                "Use -Export to save summary files. Use -IncludeRawFiles only if you also want raw Local State and Preferences copies."
+                "Summary files are exported by default. Use -NoExport to disable file output, or -Output to choose a target folder."
             )
         }
         profiles = $reportProfiles
@@ -1388,7 +1388,7 @@ $summary = Build-ReportSummary -UserDataPath $UserDataPath -LocalStatePath $loca
 $textReport = Format-TextReport -Summary $summary
 Write-Output $textReport
 
-if ($Export) {
+if (-not $NoExport) {
     $resolvedOutputDirectory = New-OutputDirectory -Path $Output
     $summaryJsonPath = Join-Path $resolvedOutputDirectory "summary.json"
     $summaryTextPath = Join-Path $resolvedOutputDirectory "summary.txt"

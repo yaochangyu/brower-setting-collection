@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
-    [string]$UserDataPath = (Join-Path $env:LOCALAPPDATA "Google\Chrome\User Data"),
+    [ValidateSet("Chrome", "Edge")]
+    [string]$Browser = "Chrome",
+    [string]$UserDataPath,
     [string[]]$Profiles,
     [string[]]$Origin,
     [switch]$NoExport,
@@ -14,6 +16,37 @@ $script:CollectorRoot = if ($PSScriptRoot) { $PSScriptRoot } elseif ($PSCommandP
 $script:ConvertFromJsonSupportsDepth = $null
 $script:PwshPath = $null
 $script:LegacyJsonParserReady = $false
+$script:BrowserConfig = switch ($Browser) {
+    "Edge" {
+        [pscustomobject]@{
+            Name = "Edge"
+            DisplayName = "Edge"
+            Scheme = "edge"
+            UserDataPath = (Join-Path $env:LOCALAPPDATA "Microsoft\Edge\User Data")
+        }
+    }
+    default {
+        [pscustomobject]@{
+            Name = "Chrome"
+            DisplayName = "Chrome"
+            Scheme = "chrome"
+            UserDataPath = (Join-Path $env:LOCALAPPDATA "Google\Chrome\User Data")
+        }
+    }
+}
+
+if (-not $PSBoundParameters.ContainsKey("UserDataPath")) {
+    $UserDataPath = $script:BrowserConfig.UserDataPath
+}
+
+function Get-BrowserPageLabel {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    return "$($script:BrowserConfig.Scheme)://$Path"
+}
 
 function ConvertTo-CompatJsonObject {
     param(
@@ -141,7 +174,7 @@ function Read-JsonFile {
         try {
             return (Read-JsonFileWithPwsh -Path $Path)
         } catch {
-            throw "Failed to parse JSON file '$Path'. Close Chrome and try again. $($_.Exception.Message)"
+            throw "Failed to parse JSON file '$Path'. Close $($script:BrowserConfig.DisplayName) and try again. $($_.Exception.Message)"
         }
     }
 }
@@ -283,7 +316,7 @@ function Get-LocalStorageRiskAssessment {
 
     if ($EnterprisePolicyKeyCount -gt 0) {
         $riskLevel = Get-HigherRiskLevel -CurrentLevel $riskLevel -CandidateLevel "high"
-        $findings.Add("Enterprise policy keys were detected at the global Chrome level ($EnterprisePolicyKeyCount).")
+        $findings.Add("Enterprise policy keys were detected at the global $($script:BrowserConfig.DisplayName) level ($EnterprisePolicyKeyCount).")
     }
 
     if ($Profile.clearBrowsingDataSelection.cookies -eq $true) {
@@ -1114,15 +1147,15 @@ function New-ProfileSectionMap {
     return [pscustomobject][ordered]@{
         profileDirectory = $Profile.profileDirectory
         sections = [pscustomobject][ordered]@{
-            "chrome://settings/content/siteData" = [pscustomobject][ordered]@{
+            (Get-BrowserPageLabel -Path "settings/content/siteData") = [pscustomobject][ordered]@{
                 collectionStatus = "partial"
                 summary = "Only settings and exception metadata related to site data are collected in this report."
                 clearBrowsingDataSelection = $Profile.clearBrowsingDataSelection
                 siteSettingExceptionCounts = $Profile.siteSettingExceptionCounts
             }
-            "chrome://policy" = [pscustomobject][ordered]@{
+            (Get-BrowserPageLabel -Path "policy") = [pscustomobject][ordered]@{
                 collectionStatus = "global-only"
-                summary = "Policy data is collected at the global Chrome level, not per-profile."
+                summary = "Policy data is collected at the global $($script:BrowserConfig.DisplayName) level, not per-profile."
             }
             "Local Storage Risk Assessment" = $localStorageRiskAssessment
             "Origin Site Data Checks" = if (@($Profile.originChecks).Count -gt 0) {
@@ -1136,14 +1169,14 @@ function New-ProfileSectionMap {
                     summary = "Use -Origin <scheme://host[:port]> to inspect site-specific storage evidence."
                 }
             }
-            "chrome://extensions" = [pscustomobject][ordered]@{
+            (Get-BrowserPageLabel -Path "extensions") = [pscustomobject][ordered]@{
                 collectionStatus = "collected"
                 extensionSettingsSource = $Profile.extensionSettingsSourcePath
                 extensionsRoot = $Profile.extensionsRootPath
                 extensionCount = $Profile.extensionCount
                 extensions = $Profile.extensions
             }
-            "chrome://prefs-internals" = [pscustomobject][ordered]@{
+            (Get-BrowserPageLabel -Path "prefs-internals") = [pscustomobject][ordered]@{
                 collectionStatus = "partial"
                 preferencesPath = $Profile.preferencesPath
                 exitType = $Profile.exitType
@@ -1156,14 +1189,14 @@ function New-ProfileSectionMap {
                 blockThirdPartyCookies = $Profile.blockThirdPartyCookies
                 notes = $Profile.notes
             }
-            "chrome://version" = [pscustomobject][ordered]@{
+            (Get-BrowserPageLabel -Path "version") = [pscustomobject][ordered]@{
                 collectionStatus = "partial"
                 profileDirectory = $Profile.profileDirectory
                 preferencesPath = $Profile.preferencesPath
             }
-            "chrome://system" = [pscustomobject][ordered]@{
+            (Get-BrowserPageLabel -Path "system") = [pscustomobject][ordered]@{
                 collectionStatus = "not-collected"
-                summary = "This script does not currently collect chrome://system runtime diagnostics."
+                summary = "This script does not currently collect $(Get-BrowserPageLabel -Path 'system') runtime diagnostics."
             }
             "Profile Metadata" = [pscustomobject][ordered]@{
                 displayName = $Profile.profileName
@@ -1184,7 +1217,7 @@ function Build-ReportSummary {
         [string]$LocalStatePath,
 
         [AllowNull()]
-        [string]$ChromeVersion,
+        [string]$BrowserVersion,
 
         [AllowNull()]
         [string]$LastUsedProfile,
@@ -1228,15 +1261,15 @@ function Build-ReportSummary {
     return [pscustomobject][ordered]@{
         generatedAt = (Get-Date).ToString("o")
         sections = [pscustomobject][ordered]@{
-            "chrome://version" = [pscustomobject][ordered]@{
+            (Get-BrowserPageLabel -Path "version") = [pscustomobject][ordered]@{
                 collectionStatus = "partial"
-                chromeVersion = $ChromeVersion
+                browserVersion = $BrowserVersion
                 userDataPath = $UserDataPath
                 localStatePath = $LocalStatePath
                 lastUsedProfile = $LastUsedProfile
                 profileCount = @($ProfilesSummary).Count
             }
-            "chrome://policy" = [pscustomobject][ordered]@{
+            (Get-BrowserPageLabel -Path "policy") = [pscustomobject][ordered]@{
                 collectionStatus = "partial"
                 enterprisePolicyKeyCount = $enterprisePolicyKeyCount
                 enterprisePolicyKeys = @(
@@ -1245,7 +1278,7 @@ function Build-ReportSummary {
                     }
                 )
             }
-            "chrome://extensions" = [pscustomobject][ordered]@{
+            (Get-BrowserPageLabel -Path "extensions") = [pscustomobject][ordered]@{
                 collectionStatus = "collected"
                 profileExtensionCounts = @(
                     $ProfilesSummary | ForEach-Object {
@@ -1256,7 +1289,7 @@ function Build-ReportSummary {
                     }
                 )
             }
-            "chrome://prefs-internals" = [pscustomobject][ordered]@{
+            (Get-BrowserPageLabel -Path "prefs-internals") = [pscustomobject][ordered]@{
                 collectionStatus = "partial"
                 localStatePath = $LocalStatePath
                 profilePreferences = @(
@@ -1269,7 +1302,7 @@ function Build-ReportSummary {
                     }
                 )
             }
-            "chrome://settings/content/siteData" = [pscustomobject][ordered]@{
+            (Get-BrowserPageLabel -Path "settings/content/siteData") = [pscustomobject][ordered]@{
                 collectionStatus = "partial"
                 summary = "This report only collects site data related settings and exception counts, not the full per-site storage inventory."
             }
@@ -1298,9 +1331,9 @@ function Build-ReportSummary {
                     summary = "Use -Origin <scheme://host[:port]> to add origin-specific storage checks."
                 }
             }
-            "chrome://system" = [pscustomobject][ordered]@{
+            (Get-BrowserPageLabel -Path "system") = [pscustomobject][ordered]@{
                 collectionStatus = "not-collected"
-                summary = "This script does not currently collect chrome://system runtime diagnostics."
+                summary = "This script does not currently collect $(Get-BrowserPageLabel -Path 'system') runtime diagnostics."
             }
             "Profile Metadata" = [pscustomobject][ordered]@{
                 profiles = @(
@@ -1315,8 +1348,8 @@ function Build-ReportSummary {
                 )
             }
             "Collection Notes" = @(
-                "This script reads Local State and profile Preferences without modifying Chrome settings.",
-                "localStorage is site data; Chrome does not expose a single global localStorage on/off switch in Preferences.",
+                "This script reads Local State and profile Preferences without modifying $($script:BrowserConfig.DisplayName) settings.",
+                "localStorage is site data; $($script:BrowserConfig.DisplayName) does not expose a single global localStorage on/off switch in Preferences.",
                 "browser.clear_data.* reflects the last clear-browsing-data dialog selection, not an automatic delete-on-exit proof.",
                 "Use -Origin with a full origin such as https://example.com to inspect site-specific storage evidence.",
                 "Extension inventory is inferred from Secure Preferences or Preferences plus the profile Extensions directory.",
@@ -1334,7 +1367,7 @@ function Format-TextReport {
     )
 
     $lines = New-Object System.Collections.Generic.List[string]
-    $lines.Add("Chrome Settings Collection")
+    $lines.Add("$($script:BrowserConfig.DisplayName) Settings Collection")
     $lines.Add("=====================")
     $lines.Add("GeneratedAt: $($Summary.generatedAt)")
 
@@ -1355,7 +1388,7 @@ function Format-TextReport {
 }
 
 if (-not (Test-Path -LiteralPath $UserDataPath -PathType Container)) {
-    throw "Chrome user data directory not found: $UserDataPath"
+    throw "$($script:BrowserConfig.DisplayName) user data directory not found: $UserDataPath"
 }
 
 $localStatePath = Get-RequiredFilePath -Path (Join-Path $UserDataPath "Local State")
@@ -1372,10 +1405,10 @@ if ($Profiles) {
     $profileDirectories = $requestedProfiles
 }
 
-$chromeVersion = $null
+$browserVersion = $null
 $lastVersionPath = Join-Path $UserDataPath "Last Version"
 if (Test-Path -LiteralPath $lastVersionPath -PathType Leaf) {
-    $chromeVersion = (Get-Content -LiteralPath $lastVersionPath -Raw).Trim()
+    $browserVersion = (Get-Content -LiteralPath $lastVersionPath -Raw).Trim()
 }
 
 $profilesSummary = foreach ($profileDirectory in $profileDirectories) {
@@ -1383,7 +1416,7 @@ $profilesSummary = foreach ($profileDirectory in $profileDirectories) {
 }
 
 $enterprisePolicy = Get-ObjectProperty -Object (Get-ObjectProperty -Object $localState -Name "policy") -Name "user_policies"
-$summary = Build-ReportSummary -UserDataPath $UserDataPath -LocalStatePath $localStatePath -ChromeVersion $chromeVersion -LastUsedProfile (Get-NestedValue -Object $localState -Path @("profile", "last_used")) -ProfilesSummary $profilesSummary -EnterprisePolicy $enterprisePolicy -Origins $Origin
+$summary = Build-ReportSummary -UserDataPath $UserDataPath -LocalStatePath $localStatePath -BrowserVersion $browserVersion -LastUsedProfile (Get-NestedValue -Object $localState -Path @("profile", "last_used")) -ProfilesSummary $profilesSummary -EnterprisePolicy $enterprisePolicy -Origins $Origin
 
 $textReport = Format-TextReport -Summary $summary
 Write-Output $textReport

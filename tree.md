@@ -13,13 +13,13 @@ D:\check_chrome
 |   |-- git-version-control.plan.md
 |   |-- launcher-default-output.plan.md
 |   |-- powershell-json-compat.plan.md
+|   |-- browser-support.plan.md
 |   |-- readme-launcher-output.plan.md
 |   |-- chrome-settings-collect-rename.plan.md
 |   |-- chrome-report-category.plan.md
 |   |-- chrome-extensions-audit.plan.md
 |   `-- chrome-settings-audit.plan.md
 |-- .gitignore
-|-- readme-launcher-output.plan.md
 |-- README.md
 |-- chrome-settings-collector.ps1
 |-- chrome-settings-launcher.ps1

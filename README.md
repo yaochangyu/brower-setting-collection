@@ -25,7 +25,13 @@
 powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collector.ps1
 ```
 
-上面這個指令除了顯示主控台內容，也會**預設匯出**到腳本同目錄下的時間戳記資料夾。
+上面這個指令除了顯示主控台內容，也會**預設匯出**到腳本同目錄下的時間戳記資料夾。若未指定 `-Browser`，預設使用 `Chrome`。
+
+若要處理 Edge，可指定：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-collector.ps1 -Browser Edge
+```
 
 如果你只想看主控台結果，不要寫出檔案，可以帶 `-NoExport`：
 
@@ -71,6 +77,12 @@ D:\check_chrome\export
 
 也就是說，`chrome-settings-launcher.ps1` 下載主腳本時雖然會暫存在 `%TEMP%\chrome-settings-collector`，但**報告不會預設寫到 TEMP**，而是寫回 launcher 所在目錄。
 
+若未指定 `-Browser`，啟動腳本也會預設使用 `Chrome`。若要處理 Edge，可指定：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-launcher.ps1 -Browser Edge
+```
+
 啟動腳本預設接受這個 GitHub 頁面網址：
 
 ```text
@@ -101,7 +113,8 @@ powershell -ExecutionPolicy Bypass -File D:\check_chrome\chrome-settings-launche
 | --- | --- |
 | `-ScriptUrl` | 只適用於 `chrome-settings-launcher.ps1`；指定 GitHub blob URL 或 raw URL，未指定時預設下載本 repo 的 `chrome-settings-collector.ps1` |
 | `-DownloadDirectory` | 只適用於 `chrome-settings-launcher.ps1`；指定下載暫存目錄，未指定時使用 `%TEMP%\chrome-settings-collector` |
-| `-UserDataPath` | 指定 Chrome `User Data` 目錄；未指定時，預設使用目前使用者的 `%LOCALAPPDATA%\Google\Chrome\User Data` |
+| `-Browser` | 適用於 `chrome-settings-collector.ps1` 與 `chrome-settings-launcher.ps1`；可選 `Chrome` 或 `Edge`，未指定時預設為 `Chrome` |
+| `-UserDataPath` | 指定瀏覽器 `User Data` 目錄；未指定時會依 `-Browser` 自動帶入，`Chrome` 為 `%LOCALAPPDATA%\Google\Chrome\User Data`，`Edge` 為 `%LOCALAPPDATA%\Microsoft\Edge\User Data` |
 | `-Profiles` | 只收集指定的 Profile，可傳一個或多個名稱，例如 `Default`、`Profile 1` |
 | `-Origin` | 指定一個或多個完整 origin（例如 `https://example.com`），額外檢查該站台的 Local Storage / IndexedDB / Session Storage 證據 |
 | `-NoExport` | 不寫出 `summary.txt` / `summary.json`；只顯示主控台結果 |

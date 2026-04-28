@@ -2,6 +2,8 @@
 param(
     [string]$ScriptUrl = "https://github.com/yaochangyu/brower-setting-collection/blob/master/chrome-settings-collector.ps1",
     [string]$DownloadDirectory = (Join-Path $env:TEMP "chrome-settings-collector"),
+    [ValidateSet("Chrome", "Edge")]
+    [string]$Browser = "Chrome",
     [string]$UserDataPath,
     [string[]]$Profiles,
     [string[]]$Origin,
@@ -53,6 +55,10 @@ Invoke-WebRequest -Uri $downloadUrl -OutFile $localScriptPath
 Unblock-File -Path $localScriptPath -ErrorAction SilentlyContinue
 
 $collectorArgs = @{}
+
+if ($PSBoundParameters.ContainsKey("Browser")) {
+    $collectorArgs["Browser"] = $Browser
+}
 
 if ($PSBoundParameters.ContainsKey("UserDataPath")) {
     $collectorArgs["UserDataPath"] = $UserDataPath

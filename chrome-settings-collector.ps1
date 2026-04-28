@@ -3,7 +3,7 @@ param(
     [string]$UserDataPath = (Join-Path $env:LOCALAPPDATA "Google\Chrome\User Data"),
     [string[]]$Profiles,
     [switch]$Export = $true,
-    [string]$OutputDirectory,
+    [string]$Output,
     [switch]$IncludeRawFiles
 )
 
@@ -896,7 +896,7 @@ $textReport = Format-TextReport -Summary $summary
 Write-Output $textReport
 
 if ($Export) {
-    $resolvedOutputDirectory = New-OutputDirectory -Path $OutputDirectory
+    $resolvedOutputDirectory = New-OutputDirectory -Path $Output
     $summaryJsonPath = Join-Path $resolvedOutputDirectory "summary.json"
     $summaryTextPath = Join-Path $resolvedOutputDirectory "summary.txt"
 
